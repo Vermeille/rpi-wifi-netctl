@@ -166,9 +166,9 @@ std::string Escape(const std::string& str) {
 int main() {
     std::vector<ConfigFile> config_files = ReadConfs("./wifi");
 
-    InitHttpInterface();
+    HTTPServer server(8080);
 
-    RegisterUrl(
+    server.RegisterUrl(
         "/",
         httpi::RestPageMaker(MakePage).AddResource(
             "GET",
@@ -210,8 +210,6 @@ int main() {
                     return JsonBuilder().Append("result", a).Build();
                 })));
 
-    ServiceLoopForever();
-
-    StopHttpInterface();  // clear resources<Paste>
+    server.ServiceLoopForever();
     return 0;
 }
