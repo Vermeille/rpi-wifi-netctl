@@ -89,18 +89,26 @@ class ConfigFile {
    public:
     static auto ParseFile(const std::string& path) {
         std::ifstream t(path.c_str());
-        std::string content{std::istreambuf_iterator<char>(t),
-                            std::istreambuf_iterator<char>()};
+        std::string line;
+        std::string essid;
+        std::string key;
+        while (std::getline(t, line)) {
+            std::string::size_type eq = line.find('=');
+            if (eq == std::string::npos) {
+                continue;
+            }
 
-        static auto parser = (parse_word("ssid") >> parse_char('=') >>
-                              ParseUntilEnd() << parse_char('\n')) &
-                             (parse_word("passwd") >> parse_char('=') >>
-                              ParseUntilEnd() << parse_char('\n'));
-        auto res = parser(content.begin(), content.end());
-        if (!res) {
-            throw std::runtime_error("parse error");
+            if (!strncmp(line.c_str(), "ESSID", 5)) {
+                essid = line.substr(eq + 1);
+            } else if (!strncmp(line.c_str(), "Key", 3)) {
+                key = line.substr(eq + 1);
+            }
         }
-        return res;
+
+        if (essid.empty() || key.empty()) {
+            throw std::runtime_error("Can't parse " + path);
+        }
+        return std::make_pair(essid, key);
     }
 
     static std::string ProfileName(const std::string& path) {
@@ -113,8 +121,8 @@ class ConfigFile {
     ConfigFile(const std::string& path)
         : path_(path), profile_(ProfileName(path)) {
         auto res = ParseFile(path);
-        ssid_ = Unquote(res->first.first);
-        passwd_ = Unquote(res->first.second);
+        ssid_ = Unquote(res.first);
+        passwd_ = Unquote(res.second);
     }
 
     ConfigFile(const std::string& path,
@@ -128,7 +136,10 @@ class ConfigFile {
     void Write() const {
         std::ofstream out(path_);
 
-        out << "ssid=" << Quote(ssid_) << "\npasswd=" << Quote(passwd_) << "\n";
+        out << "Description=" << profile_
+            << "\nInterface=wlan0\nConnection=wireless\nSecurity=wpa\nIP="
+               "dhcp\nESSID="
+            << Quote(ssid_) << "\nKey=" << Quote(passwd_) << "\n";
     }
 
     const std::string& ssid() const { return ssid_; }
