@@ -246,11 +246,16 @@ std::string WifiEditForm(const std::string& btn_text,
     return html.Get();
 }
 
-int main() {
-    const std::string path = "./wifi/";
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " /path/to/netctl/directory";
+        return 1;
+    }
+
+    const std::string path = argv[1] + std::string("/");
     std::vector<ConfigFile> config_files = ReadConfs(path);
 
-    HTTPServer server(8080);
+    HTTPServer server(80);
 
     server.RegisterUrl(
         "/",
