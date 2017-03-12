@@ -101,6 +101,13 @@ struct Submit : public Tag {
     Submit() : Tag("input") { Attr("type", "submit").Autoclose(); }
 };
 
+struct Button : public Tag {
+    Button() : Tag("button") {}
+};
+
+struct Label : public Tag {
+    Label() : Tag("label") {}
+};
 // I don't have any better, sadly
 class Close {};
 

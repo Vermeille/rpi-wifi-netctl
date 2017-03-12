@@ -1,7 +1,9 @@
 #include <dirent.h>
+#include <libgen.h>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+
 #include "parcxx.h"
 
 #include <httpi/displayer.h>
@@ -36,27 +38,19 @@ std::string MakePage(const std::string& content) {
                         Ul() <<
                             Li() <<
                                 A().Attr("href", "/") <<
-                                    "How to / manual" <<
+                                    "Configurer le WiFi" <<
                                 Close() <<
                             Close() <<
                             Li() <<
-                                A().Attr("href", "/new") <<
-                                    "Create a new solo game" <<
+                                A().Attr("href",
+                                "https://cadre.vermeille.fr/oauth2authorize") <<
+                                    "Autoriser Google Photos" <<
                                 Close() <<
                             Close() <<
                             Li() <<
-                                A().Attr("href", "/turn") <<
-                                    "Play a turn in a solo game" <<
-                                Close() <<
-                            Close() <<
-                            Li() <<
-                                A().Attr("href", "/newvs") <<
-                                    "Create/Join a Versus game" <<
-                                Close() <<
-                            Close() <<
-                            Li() <<
-                                A().Attr("href", "/turnvs") <<
-                                    "Play a turn in a versus game" <<
+                                A().Attr("href",
+                                "https://cadre.vermeille.fr/") <<
+                                    "Autoriser Facebook" <<
                                 Close() <<
                             Close() <<
                         Close() <<
@@ -77,9 +71,23 @@ auto ParseUntilEnd() {
         });
 }
 
+std::string Quote(const std::string& str) {
+    if (str.find(' ') == std::string::npos) {
+        return str;
+    }
+    return "\"" + str + "\"";
+}
+
+std::string Unquote(const std::string& str) {
+    if (str.front() == str.back() && str.front() == '"') {
+        return str.substr(1, str.size() - 2);
+    }
+    return str;
+}
+
 class ConfigFile {
    public:
-    ConfigFile(const std::string& path) : path_(path) {
+    static auto ParseFile(const std::string& path) {
         std::ifstream t(path.c_str());
         std::string content{std::istreambuf_iterator<char>(t),
                             std::istreambuf_iterator<char>()};
@@ -92,26 +100,47 @@ class ConfigFile {
         if (!res) {
             throw std::runtime_error("parse error");
         }
-
-        ssid_ = res->first.first;
-        passwd_ = res->first.second;
-        path_ = path;
+        return res;
     }
+
+    static std::string ProfileName(const std::string& path) {
+        std::vector<char> path_copy(path.c_str(),
+                                    path.c_str() + path.size() + 1);
+        char* base = basename(&path_copy[0]);
+        return std::string(base);
+    }
+
+    ConfigFile(const std::string& path)
+        : path_(path), profile_(ProfileName(path)) {
+        auto res = ParseFile(path);
+        ssid_ = Unquote(res->first.first);
+        passwd_ = Unquote(res->first.second);
+    }
+
+    ConfigFile(const std::string& path,
+               const std::string& ssid,
+               const std::string password)
+        : ssid_(ssid),
+          passwd_(password),
+          path_(path),
+          profile_(ProfileName(path)) {}
 
     void Write() const {
         std::ofstream out(path_);
 
-        out << "ssid=\"" << ssid_ << "\"\npasswd=" << passwd_ << "\n";
+        out << "ssid=" << Quote(ssid_) << "\npasswd=" << Quote(passwd_) << "\n";
     }
 
     const std::string& ssid() const { return ssid_; }
     const std::string& passwd() const { return passwd_; }
     const std::string& path() const { return path_; }
+    const std::string& profile() const { return profile_; }
 
    private:
     std::string ssid_;
     std::string passwd_;
     std::string path_;
+    std::string profile_;
 };
 
 std::vector<ConfigFile> ReadConfs(const std::string& path) {
@@ -163,52 +192,129 @@ std::string Escape(const std::string& str) {
     return res;
 }
 
+std::string WifiEditForm(const std::string& btn_text,
+                         const std::string& profile = "",
+                         const std::string& ssid = "",
+                         const std::string& passwd = "") {
+    using namespace httpi::html;
+    Html html;
+    // clang-format off
+    html <<
+        Form("POST", "/").AddClass("form-horizontal") <<
+            Div().AddClass("form-group") <<
+                Label().AddClass("col-sm-2 control-label") <<
+                    "Nom du profil" <<
+                Close() <<
+                Div().AddClass("col-sm-7") <<
+                    Input()
+                    .Name("profile")
+                    .Attr("type", "text")
+                    .AddClass("form-control")
+                    .Attr("value", profile) <<
+                Close() <<
+            Close() <<
+            Div().AddClass("form-group") <<
+                Label().AddClass("col-sm-2 control-label") <<
+                    "Nom du réseau" <<
+                Close() <<
+                Div().AddClass("col-sm-7") <<
+                    Input()
+                    .Name("ssid")
+                    .Attr("type", "text")
+                    .AddClass("form-control")
+                    .Attr("value", ssid) <<
+                Close() <<
+            Close() <<
+            Div().AddClass("form-group") <<
+                Label().AddClass("col-sm-2 control-label") <<
+                    "Mot de passe" <<
+                Close() <<
+                Div().AddClass("col-sm-7") <<
+                    Input()
+                    .Name("password")
+                    .AddClass("form-control")
+                    .Attr("value", passwd) <<
+                Close() <<
+            Close() <<
+            Button()
+            .Attr("type", "submit")
+            .AddClass("btn btn-default") <<
+                btn_text <<
+            Close() <<
+        Close();
+    // clang-format on
+    return html.Get();
+}
+
 int main() {
-    std::vector<ConfigFile> config_files = ReadConfs("./wifi");
+    const std::string path = "./wifi/";
+    std::vector<ConfigFile> config_files = ReadConfs(path);
 
     HTTPServer server(8080);
 
     server.RegisterUrl(
         "/",
-        httpi::RestPageMaker(MakePage).AddResource(
-            "GET",
-            httpi::RestResource(
-                httpi::html::FormDescriptor<>{},
-                []() { return 0; },
-                [&](int a) {
-                    using namespace httpi::html;
-                    Html html;
-                    html << Ul();
-                    for (auto& c : config_files) {
-                        html << Form() << Div().Attr("class", "form-group row")
-                             << Input()
-                                    .Name("path")
-                                    .Attr("type", "text")
-                                    .Attr("class", "form-control")
-                                    .Attr("value", Escape(c.path()))
-                             << Close() << Div().Attr("class", "form-group row")
-                             << Input()
-                                    .Name("ssid")
-                                    .Attr("type", "text")
-                                    .Attr("class", "form-control")
-                                    .Attr("value", Escape(c.ssid()))
-                             << Close() << Div().Attr("class", "form-group row")
-                             << Input()
-                                    .Name("passwd")
-                                    .Attr("class", "form-control")
-                                    .Attr("value", Escape(c.passwd()))
-                             << Close()
-                             << Tag("button")
-                                    .Attr("type", "submit")
-                                    .Attr("class", "btn btn-default")
-                             << "Edit" << Close() << Close();
-                    }
-                    html << Close();
-                    return html.Get();
-                },
-                [](int a) {
-                    return JsonBuilder().Append("result", a).Build();
-                })));
+        httpi::RestPageMaker(MakePage)
+            .AddResource("GET",
+                         httpi::RestResource(httpi::html::FormDescriptor<>{},
+                                             []() { return 0; },
+                                             [&](int) {
+                                                 using namespace httpi::html;
+                                                 Html html;
+                                                 for (auto& c : config_files) {
+                                                     html << WifiEditForm(
+                                                         "Modifier",
+                                                         Escape(c.profile()),
+                                                         Escape(c.ssid()),
+                                                         Escape(c.passwd()));
+                                                 }
+                                                 return html.Get();
+                                             },
+                                             [](int) { return "{}"; }))
+            .AddResource("POST",
+                         httpi::RestResource(
+                             httpi::html::FormDescriptor<std::string,
+                                                         std::string,
+                                                         std::string>{
+                                 "POST",
+                                 "/",
+                                 "Réseaux",
+                                 "Modifier les réseaux",
+                                 {{"profile", "text", "nom du profil"},
+                                  {"ssid", "text", "nom du réseau"},
+                                  {"password", "text", "mot de passe wifi"}}},
+                             [&](auto profile, auto ssid, auto passwd) {
+                                 auto found = std::find_if(
+                                     config_files.begin(),
+                                     config_files.end(),
+                                     [&](const auto& x) {
+                                         return x.profile() == profile;
+                                     });
+                                 if (found == config_files.end()) {
+                                     config_files.emplace_back(
+                                         path + profile, ssid, passwd);
+                                 } else {
+                                     *found = ConfigFile(
+                                         path + profile, ssid, passwd);
+                                 }
+                                 for (auto& file : config_files) {
+                                     file.Write();
+                                 }
+                                 return true;
+                             },
+                             [&](bool ok) {
+                                 using namespace httpi::html;
+                                 Html html;
+                                 html << "OK";
+                                 for (auto& c : config_files) {
+                                     html << WifiEditForm("Modifier",
+                                                          Escape(c.profile()),
+                                                          Escape(c.ssid()),
+                                                          Escape(c.passwd()));
+                                 }
+                                 return html.Get();
+                             },
+                             [](bool ok) { return "{}"; })));
 
     server.ServiceLoopForever();
     return 0;
