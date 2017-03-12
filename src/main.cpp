@@ -4,8 +4,6 @@
 #include <fstream>
 #include <iostream>
 
-#include "parcxx.h"
-
 #include <httpi/displayer.h>
 #include <httpi/html/chart.h>
 #include <httpi/html/form-gen.h>
@@ -59,16 +57,6 @@ std::string MakePage(const std::string& content) {
             "</body>"
         "</html>").Get();
     // clang-format on
-}
-
-auto ParseUntilEnd() {
-    return parse_while1(
-        parser_pred(parse_char(), [](auto c) { return c != '\n'; }),
-        std::string(),
-        [](std::string res, char c) {
-            res.push_back(c);
-            return res;
-        });
 }
 
 std::string Quote(const std::string& str) {
