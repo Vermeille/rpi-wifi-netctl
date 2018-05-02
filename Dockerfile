@@ -18,10 +18,6 @@ RUN apt-get update &&  apt-get install -y \
 RUN ln -s /usr/bin/aclocal-1.15 /usr/bin/aclocal-1.14
 RUN ln -s /usr/bin/automake-1.15 /usr/bin/automake-1.14
 
-ADD . /root
-
-EXPOSE 8888
-
 RUN mkdir build && cd build && cmake .. && make
 
 ENTRYPOINT ["./build/puyo"]
